@@ -55,7 +55,9 @@ export default function RoomPage() {
   }, [reload]);
 
   const me = members.find((m) => m.user_id === userId);
-  const status: 'member' | 'left' | 'none' = !me ? 'none' : me.left_at ? 'left' : 'member';
+  // A creator without a row (left before records were kept) can come back like a former member.
+  const status: 'member' | 'left' | 'none' =
+    me && !me.left_at ? 'member' : me || room?.created_by === userId ? 'left' : 'none';
 
   const join = useCallback(async (opts: { code?: string; token?: string }) => {
     await joinRoom(roomId, getNickname(), opts);

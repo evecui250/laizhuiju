@@ -72,7 +72,7 @@ export default function Home() {
         </p>
       </Title>
 
-      {tab === 'discover' && <Discover rooms={rooms} />}
+      {tab === 'discover' && <Discover rooms={rooms} me={userId} />}
       {tab === 'mine' && (
         <>
           <CreateRoom nickname={nickname} />
@@ -197,7 +197,7 @@ function CreateRoom({ nickname }: { nickname: string }) {
   );
 }
 
-function Discover({ rooms }: { rooms: RoomSummary[] }) {
+function Discover({ rooms, me }: { rooms: RoomSummary[]; me: string }) {
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
   const shown = rooms.filter((r) => !q || r.name.toLowerCase().includes(q));
@@ -215,7 +215,7 @@ function Discover({ rooms }: { rooms: RoomSummary[] }) {
                 <span className="text-xs text-mist">共 {r.episode_count} 集 · {r.member_count} 人在追</span>
               </span>
               <span className="shrink-0 text-sm text-popcorn">
-                {r.my_status === 'member' ? '进入 →' : r.my_status === 'left' ? '回到房间 →' : '🔒 查看'}
+                {r.my_status === 'member' ? '进入 →' : r.my_status === 'left' || r.created_by === me ? '回到房间 →' : '🔒 查看'}
               </span>
             </a>
           </li>
