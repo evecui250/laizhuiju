@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Bar from '../../components/Bar';
 import {
-  ensureUser, getMembers, getNickname, getRoom, joinRoom, leaveRoom, setWatched, watchRoom,
+  deleteRoom, ensureUser, getMembers, getNickname, getRoom, joinRoom, leaveRoom, setWatched, watchRoom,
   type Member, type Room,
 } from '../../lib/api';
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const latestOf = (w: number[]) => (w.length ? Math.max(...w) : 0);
+const upTo = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 export default function RoomPage() {
   const [roomId, setRoomId] = useState('');
@@ -102,14 +103,14 @@ export default function RoomPage() {
                 );
               })}
             </div>
-            {myLatest < room.episode_count && (
-              <button
-                onClick={() => save([...Array.from({ length: myLatest + 1 }, (_, i) => i + 1), ...mine])}
-                className="mt-4 w-full rounded-xl border border-popcorn/60 py-3 text-popcorn active:scale-[0.98]"
-              >
-                看完第 {myLatest + 1} 集了 ✓
-              </button>
-            )}
+            <BulkMark
+              total={room.episode_count}
+              latest={myLatest}
+              allDone={mine.length === room.episode_count}
+              onUpTo={(n) => save([...upTo(n), ...mine])}
+              onAll={() => save(upTo(room.episode_count))}
+              onClear={() => save([])}
+            />
           </section>
 
           <section className="mt-10">
@@ -129,16 +130,30 @@ export default function RoomPage() {
             )}
           </section>
 
-          <button
-            className="mt-12 w-full text-center text-xs text-mist/60 underline"
-            onClick={async () => {
-              if (!confirm('退出这个房间？你的观看记录会被删除。')) return;
-              await leaveRoom(roomId, userId);
-              location.href = `${base}/`;
-            }}
-          >
-            退出房间
-          </button>
+          <div className="mt-12 flex justify-center gap-8 text-xs">
+            <button
+              className="text-mist/60 underline"
+              onClick={async () => {
+                if (!confirm('退出这个房间？你的观看记录会被删除。')) return;
+                await leaveRoom(roomId, userId);
+                location.href = `${base}/`;
+              }}
+            >
+              退出房间
+            </button>
+            {room.created_by === userId && (
+              <button
+                className="text-coral/80 underline"
+                onClick={async () => {
+                  if (!confirm(`删除房间「${room.name}」？所有人的观看记录都会一起删除，不能恢复。`)) return;
+                  try { await deleteRoom(roomId); location.href = `${base}/`; }
+                  catch (e: any) { setError(e.message ?? String(e)); }
+                }}
+              >
+                删除房间
+              </button>
+            )}
+          </div>
         </>
       )}
     </Back>
@@ -168,6 +183,59 @@ function MemberRow({ m, total, label, note, mine }: { m: Member; total: number; 
       <Bar value={m.watched.length} max={total} color={mine ? 'bg-popcorn' : 'bg-coral'} />
       <p className="mt-1 text-xs text-mist">已看 {m.watched.length}/{total} 集{note ? ` · ${note}` : ''}</p>
     </li>
+  );
+}
+
+function BulkMark({ total, latest, allDone, onUpTo, onAll, onClear }: {
+  total: number; latest: number; allDone: boolean;
+  onUpTo: (n: number) => void; onAll: () => void; onClear: () => void;
+}) {
+  const [upto, setUpto] = useState('');
+  const n = parseInt(upto, 10);
+  const ok = n >= 1 && n <= total;
+  return (
+    <div className="mt-4 space-y-3">
+      {latest < total && (
+        <button
+          onClick={() => onUpTo(latest + 1)}
+          className="w-full rounded-xl border border-popcorn/60 py-3 text-popcorn active:scale-[0.98]"
+        >
+          看完第 {latest + 1} 集了 ✓
+        </button>
+      )}
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => { e.preventDefault(); if (ok) { onUpTo(n); setUpto(''); } }}
+      >
+        <span className="shrink-0 text-sm text-mist">第 1 集看到第</span>
+        <input
+          className="w-16 rounded-lg border border-line bg-plum px-2 py-2 text-center outline-none focus:border-popcorn"
+          value={upto}
+          inputMode="numeric"
+          placeholder={String(Math.min(total, Math.max(latest, 1)))}
+          onChange={(e) => setUpto(e.target.value.replace(/\D/g, ''))}
+        />
+        <span className="shrink-0 text-sm text-mist">集</span>
+        <button className="ml-auto shrink-0 rounded-lg bg-card px-3 py-2 text-sm text-popcorn disabled:opacity-40" disabled={!ok}>
+          一起标记
+        </button>
+      </form>
+      <div className="flex gap-3">
+        <button
+          onClick={onAll}
+          disabled={allDone}
+          className="flex-1 rounded-xl bg-popcorn py-3 font-semibold text-night disabled:opacity-40 active:scale-[0.98]"
+        >
+          {allDone ? '已全部看完 🎉' : '全部看完了'}
+        </button>
+        <button
+          onClick={() => { if (confirm('清空你的所有观看记录？')) onClear(); }}
+          className="rounded-xl bg-card px-4 py-3 text-sm text-mist active:scale-[0.98]"
+        >
+          清空
+        </button>
+      </div>
+    </div>
   );
 }
 

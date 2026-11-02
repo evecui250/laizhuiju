@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   createRoom, ensureUser, getNickname, joinRoom, myRooms, renameEverywhere,
-  saveNickname, searchRooms, type MyRoom, type Room,
+  allRooms, saveNickname, type MyRoom, type RoomWithCount,
 } from '../lib/api';
 import Bar from '../components/Bar';
 
@@ -52,7 +52,7 @@ export default function Home() {
 
       <Section title="我的房间">
         {rooms.length === 0 ? (
-          <p className="text-sm text-mist">还没有房间。创建一个，或者搜朋友的房间加入吧。</p>
+          <p className="text-sm text-mist">还没有房间。创建一个，或者在下面加入朋友的房间吧。</p>
         ) : (
           <ul className="space-y-3">
             {rooms.map((r) => {
@@ -77,7 +77,7 @@ export default function Home() {
       </Section>
 
       <CreateRoom nickname={nickname} />
-      <FindRoom nickname={nickname} myRoomIds={new Set(rooms.map((r) => r.id))} />
+      <AllRooms nickname={nickname} myRoomIds={new Set(rooms.map((r) => r.id))} />
     </Shell>
   );
 }
@@ -155,39 +155,38 @@ function CreateRoom({ nickname }: { nickname: string }) {
   );
 }
 
-function FindRoom({ nickname, myRoomIds }: { nickname: string; myRoomIds: Set<string> }) {
+function AllRooms({ nickname, myRoomIds }: { nickname: string; myRoomIds: Set<string> }) {
+  const [rooms, setRooms] = useState<RoomWithCount[] | null>(null);
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Room[] | null>(null);
   const [busyId, setBusyId] = useState('');
   const [err, setErr] = useState('');
 
+  useEffect(() => {
+    allRooms().then(setRooms).catch((e) => setErr(e.message ?? String(e)));
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const shown = (rooms ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
+
   return (
-    <Section title="找朋友的房间">
-      <form
-        className="flex gap-3"
-        onSubmit={async (e) => {
-          e.preventDefault(); setErr('');
-          try { setResults(await searchRooms(query)); } catch (e: any) { setErr(e.message ?? String(e)); }
-        }}
-      >
-        <input className={inputCls} value={query} placeholder="输入房间名" onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
-        <button className={btnCls + ' shrink-0'} disabled={!query.trim()}>搜索</button>
-      </form>
+    <Section title="所有房间">
+      <input className={inputCls} value={query} placeholder="搜索房间名" onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
       {err && <p className="mt-2 text-sm text-coral">{err}</p>}
-      {results && (
+      {rooms === null && !err && <p className="mt-3 text-sm text-mist">加载中…</p>}
+      {rooms && (
         <ul className="mt-3 space-y-2">
-          {results.length === 0 && <li className="text-sm text-mist">没找到，确认一下房间名？</li>}
-          {results.map((r) => (
-            <li key={r.id} className="flex items-center justify-between rounded-2xl bg-card px-4 py-3">
-              <span>
-                <span className="font-semibold">{r.name}</span>
-                <span className="ml-2 text-sm text-mist">共 {r.episode_count} 集</span>
+          {shown.length === 0 && <li className="text-sm text-mist">{q ? '没找到，确认一下房间名？' : '还没有人创建房间'}</li>}
+          {shown.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3">
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{r.name}</span>
+                <span className="text-xs text-mist">共 {r.episode_count} 集 · {r.member_count} 人在追</span>
               </span>
               {myRoomIds.has(r.id) ? (
-                <a href={roomHref(r.id)} className="text-sm text-popcorn">进入 →</a>
+                <a href={roomHref(r.id)} className="shrink-0 text-sm text-popcorn">进入 →</a>
               ) : (
                 <button
-                  className="rounded-lg bg-popcorn px-3 py-1.5 text-sm font-semibold text-night disabled:opacity-40"
+                  className="shrink-0 rounded-lg bg-popcorn px-3 py-1.5 text-sm font-semibold text-night disabled:opacity-40"
                   disabled={busyId === r.id}
                   onClick={async () => {
                     setBusyId(r.id);

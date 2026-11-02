@@ -22,6 +22,7 @@ export type Member = {
 };
 
 export type MyRoom = Room & { watched: number[] };
+export type RoomWithCount = Room & { member_count: number };
 
 const NICK_KEY = 'lzj_nickname';
 
@@ -52,6 +53,27 @@ export async function myRooms(userId: string): Promise<MyRoom[]> {
   return (data ?? [])
     .filter((r: any) => r.rooms)
     .map((r: any) => ({ ...(r.rooms as Room), watched: r.watched as number[] }));
+}
+
+/** Every room, newest first, with how many people are in each. */
+export async function allRooms(): Promise<RoomWithCount[]> {
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('*, members(count)')
+    .order('created_at', { ascending: false })
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []).map((r: any) => {
+    const { members, ...room } = r;
+    return { ...(room as Room), member_count: members?.[0]?.count ?? 0 };
+  });
+}
+
+/** Only the room's creator can do this (enforced by RLS). */
+export async function deleteRoom(roomId: string) {
+  const { data, error } = await supabase.from('rooms').delete().eq('id', roomId).select('id');
+  if (error) throw error;
+  if (!data?.length) throw new Error('只有创建房间的人可以删除它');
 }
 
 export async function searchRooms(query: string): Promise<Room[]> {
