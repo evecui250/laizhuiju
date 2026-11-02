@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-night: #1d1430;
+  --color-plum: #2c1f47;
+  --color-card: #372a57;
+  --color-line: #4a3b6e;
+  --color-popcorn: #ffc94d;
+  --color-coral: #ff7a6b;
+  --color-mist: #c9bfe0;
+}
+
+html, body {
+  background: var(--color-night);
+  color: #f6f1ff;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(120% 60% at 50% -10%, #4b2f7a 0%, transparent 60%),
+    var(--color-night);
+  background-attachment: fixed;
+}
+
+input {
+  font-size: 16px; /* stops iOS zooming in on focus */
+}
