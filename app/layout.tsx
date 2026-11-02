@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN">
       <body>
         <main
-          className="mx-auto max-w-md px-5 pb-16"
+          className="mx-auto max-w-md px-5 pb-28"
           style={{ paddingTop: 'max(1.5rem, env(safe-area-inset-top))' }}
         >
           {children}

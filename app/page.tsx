@@ -2,87 +2,117 @@
 
 import { useEffect, useState } from 'react';
 import {
-  createRoom, ensureUser, getNickname, joinRoom, myRooms, renameEverywhere,
-  allRooms, saveNickname, type MyRoom, type RoomWithCount,
+  createRoom, ensureUser, getNickname, renameEverywhere, roomSummaries, saveNickname,
+  type RoomSummary,
 } from '../lib/api';
 import Bar from '../components/Bar';
+import NicknameForm from '../components/NicknameForm';
 
 const base = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
 const roomHref = (id: string) => `${base}/room/?id=${id}`;
+
+type Tab = 'discover' | 'mine' | 'joined';
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'discover', label: '发现', icon: '🍿' },
+  { id: 'mine', label: '我创建的', icon: '🎬' },
+  { id: 'joined', label: '我加入的', icon: '👯' },
+];
+const tabFromHash = (): Tab => {
+  const h = typeof location === 'undefined' ? '' : location.hash.slice(1);
+  return h === 'mine' || h === 'joined' ? h : 'discover';
+};
 
 export default function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
   const [editingNick, setEditingNick] = useState(false);
-  const [rooms, setRooms] = useState<MyRoom[] | null>(null);
+  const [rooms, setRooms] = useState<RoomSummary[] | null>(null);
+  const [tab, setTab] = useState<Tab>('discover');
   const [error, setError] = useState('');
 
   useEffect(() => {
     setNickname(getNickname());
+    setTab(tabFromHash());
+    const onHash = () => setTab(tabFromHash());
+    addEventListener('hashchange', onHash);
     ensureUser()
-      .then(async (id) => { setUserId(id); setRooms(await myRooms(id)); })
+      .then(async (id) => { setUserId(id); setRooms(await roomSummaries()); })
       .catch((e) => setError(String(e.message ?? e)));
+    return () => removeEventListener('hashchange', onHash);
   }, []);
 
-  if (error) return <Shell><p className="mt-10 text-coral">连接失败：{error}</p></Shell>;
-  if (!userId || rooms === null) return <Shell><p className="mt-10 text-mist">加载中…</p></Shell>;
+  if (error) return <Title><p className="mt-10 text-coral">连接失败：{error}</p></Title>;
+  if (!userId || rooms === null) return <Title><p className="mt-10 text-mist">加载中…</p></Title>;
 
   if (!nickname || editingNick) {
     return (
-      <Shell>
+      <Title>
         <NicknameForm
           initial={nickname}
           onSave={async (n) => {
             saveNickname(n);
             setNickname(n);
             setEditingNick(false);
-            if (rooms.length) await renameEverywhere(userId, n).catch(() => {});
+            if (rooms.some((r) => r.my_status)) await renameEverywhere(userId, n).catch(() => {});
           }}
         />
-      </Shell>
+      </Title>
     );
   }
 
+  const mine = rooms.filter((r) => r.created_by === userId && r.my_status === 'member');
+  const joined = rooms.filter((r) => r.created_by !== userId && r.my_status === 'member');
+
   return (
-    <Shell>
-      <p className="mt-1 text-sm text-mist">
-        嗨，{nickname}
-        <button className="ml-2 underline decoration-dotted opacity-70" onClick={() => setEditingNick(true)}>改昵称</button>
-      </p>
+    <>
+      <Title>
+        <p className="mt-1 text-sm text-mist">
+          嗨，{nickname}
+          <button className="ml-2 underline decoration-dotted opacity-70" onClick={() => setEditingNick(true)}>改昵称</button>
+        </p>
+      </Title>
 
-      <Section title="我的房间">
-        {rooms.length === 0 ? (
-          <p className="text-sm text-mist">还没有房间。创建一个，或者在下面加入朋友的房间吧。</p>
-        ) : (
-          <ul className="space-y-3">
-            {rooms.map((r) => {
-              const latest = r.watched.length ? Math.max(...r.watched) : 0;
-              return (
-                <li key={r.id}>
-                  <a href={roomHref(r.id)} className="block rounded-2xl bg-card p-4 active:scale-[0.99]">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-lg font-semibold">{r.name}</span>
-                      <span className="text-sm text-mist">共 {r.episode_count} 集</span>
-                    </div>
-                    <Bar value={r.watched.length} max={r.episode_count} />
-                    <p className="mt-1 text-xs text-mist">
-                      {latest ? `看到第 ${latest} 集 · 已看 ${r.watched.length} 集` : '还没开始看'}
-                    </p>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Section>
+      {tab === 'discover' && <Discover rooms={rooms} />}
+      {tab === 'mine' && (
+        <>
+          <CreateRoom nickname={nickname} />
+          <Section title="我创建的房间">
+            <MyList rooms={mine} empty="还没有创建房间。" />
+          </Section>
+        </>
+      )}
+      {tab === 'joined' && (
+        <Section title="我加入的房间">
+          <MyList rooms={joined} empty="还没有加入别人的房间。让朋友把邀请链接发给你，或者在「发现」里找到房间，用邀请码加入。" />
+        </Section>
+      )}
 
-      <CreateRoom nickname={nickname} />
-      <AllRooms nickname={nickname} myRoomIds={new Set(rooms.map((r) => r.id))} />
-    </Shell>
+      <nav
+        className="fixed inset-x-0 bottom-0 border-t border-line bg-night/95 backdrop-blur"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="mx-auto flex max-w-md">
+          {TABS.map((t) => {
+            const count = t.id === 'mine' ? mine.length : t.id === 'joined' ? joined.length : 0;
+            return (
+              <a
+                key={t.id}
+                href={t.id === 'discover' ? '#' : `#${t.id}`}
+                onClick={() => setTab(t.id)}
+                className={`flex flex-1 flex-col items-center py-2.5 text-xs ${tab === t.id ? 'text-popcorn' : 'text-mist/70'}`}
+              >
+                <span className="text-xl leading-none" aria-hidden>{t.icon}</span>
+                <span className="mt-1">{t.label}{count ? ` ${count}` : ''}</span>
+              </a>
+            );
+          })}
+        </div>
+      </nav>
+    </>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Title({ children }: { children?: React.ReactNode }) {
   return (
     <>
       <h1 className="text-3xl font-bold tracking-wide">
@@ -105,18 +135,29 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const inputCls = 'w-full rounded-xl border border-line bg-plum px-4 py-3 outline-none placeholder:text-mist/50 focus:border-popcorn';
 const btnCls = 'rounded-xl bg-popcorn px-5 py-3 font-semibold text-night disabled:opacity-40 active:scale-[0.98]';
 
-function NicknameForm({ initial, onSave }: { initial: string; onSave: (n: string) => void }) {
-  const [value, setValue] = useState(initial);
-  const ok = value.trim().length > 0 && value.trim().length <= 20;
+function MyList({ rooms, empty }: { rooms: RoomSummary[]; empty: string }) {
+  if (rooms.length === 0) return <p className="text-sm text-mist">{empty}</p>;
   return (
-    <form
-      className="mt-10 space-y-4"
-      onSubmit={(e) => { e.preventDefault(); if (ok) onSave(value.trim()); }}
-    >
-      <label className="block text-mist">朋友们会看到你的昵称</label>
-      <input className={inputCls} value={value} maxLength={20} placeholder="比如：小崔" onChange={(e) => setValue(e.target.value)} autoFocus />
-      <button className={btnCls + ' w-full'} disabled={!ok}>好啦</button>
-    </form>
+    <ul className="space-y-3">
+      {rooms.map((r) => {
+        const w = r.my_watched ?? [];
+        const latest = w.length ? Math.max(...w) : 0;
+        return (
+          <li key={r.id}>
+            <a href={roomHref(r.id)} className="block rounded-2xl bg-card p-4 active:scale-[0.99]">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-lg font-semibold">{r.name}</span>
+                <span className="shrink-0 text-sm text-mist">{r.member_count} 人 · 共 {r.episode_count} 集</span>
+              </div>
+              <Bar value={w.length} max={r.episode_count} />
+              <p className="mt-1 text-xs text-mist">
+                {w.length === r.episode_count ? '已全部看完 🎉' : latest ? `看到第 ${latest} 集 · 已看 ${w.length} 集` : '还没开始看'}
+              </p>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -137,8 +178,8 @@ function CreateRoom({ nickname }: { nickname: string }) {
           if (!ok) return;
           setBusy(true); setErr('');
           try {
-            const room = await createRoom(name, n, nickname);
-            location.href = roomHref(room.id);
+            const id = await createRoom(name, n, nickname);
+            location.href = roomHref(id);
           } catch (e: any) {
             setErr(e.message ?? String(e)); setBusy(false);
           }
@@ -149,58 +190,37 @@ function CreateRoom({ nickname }: { nickname: string }) {
           <input className={inputCls} value={count} inputMode="numeric" placeholder="一共几集" onChange={(e) => setCount(e.target.value.replace(/\D/g, ''))} />
           <button className={btnCls + ' shrink-0'} disabled={!ok || busy}>{busy ? '创建中…' : '创建'}</button>
         </div>
+        <p className="text-xs text-mist/70">创建后会生成邀请链接和 4 位邀请码，只有拿到的朋友才能加入。</p>
         {err && <p className="text-sm text-coral">{err}</p>}
       </form>
     </Section>
   );
 }
 
-function AllRooms({ nickname, myRoomIds }: { nickname: string; myRoomIds: Set<string> }) {
-  const [rooms, setRooms] = useState<RoomWithCount[] | null>(null);
+function Discover({ rooms }: { rooms: RoomSummary[] }) {
   const [query, setQuery] = useState('');
-  const [busyId, setBusyId] = useState('');
-  const [err, setErr] = useState('');
-
-  useEffect(() => {
-    allRooms().then(setRooms).catch((e) => setErr(e.message ?? String(e)));
-  }, []);
-
   const q = query.trim().toLowerCase();
-  const shown = (rooms ?? []).filter((r) => !q || r.name.toLowerCase().includes(q));
+  const shown = rooms.filter((r) => !q || r.name.toLowerCase().includes(q));
 
   return (
-    <Section title="所有房间">
+    <Section title="大家在追什么">
       <input className={inputCls} value={query} placeholder="搜索房间名" onChange={(e) => setQuery(e.target.value)} enterKeyHint="search" />
-      {err && <p className="mt-2 text-sm text-coral">{err}</p>}
-      {rooms === null && !err && <p className="mt-3 text-sm text-mist">加载中…</p>}
-      {rooms && (
-        <ul className="mt-3 space-y-2">
-          {shown.length === 0 && <li className="text-sm text-mist">{q ? '没找到，确认一下房间名？' : '还没有人创建房间'}</li>}
-          {shown.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3">
+      <ul className="mt-3 space-y-2">
+        {shown.length === 0 && <li className="text-sm text-mist">{q ? '没找到这个房间' : '还没有人创建房间'}</li>}
+        {shown.map((r) => (
+          <li key={r.id}>
+            <a href={roomHref(r.id)} className="flex items-center justify-between gap-3 rounded-2xl bg-card px-4 py-3 active:scale-[0.99]">
               <span className="min-w-0">
                 <span className="block truncate font-semibold">{r.name}</span>
                 <span className="text-xs text-mist">共 {r.episode_count} 集 · {r.member_count} 人在追</span>
               </span>
-              {myRoomIds.has(r.id) ? (
-                <a href={roomHref(r.id)} className="shrink-0 text-sm text-popcorn">进入 →</a>
-              ) : (
-                <button
-                  className="shrink-0 rounded-lg bg-popcorn px-3 py-1.5 text-sm font-semibold text-night disabled:opacity-40"
-                  disabled={busyId === r.id}
-                  onClick={async () => {
-                    setBusyId(r.id);
-                    try { await joinRoom(r.id, nickname); location.href = roomHref(r.id); }
-                    catch (e: any) { setErr(e.message ?? String(e)); setBusyId(''); }
-                  }}
-                >
-                  加入
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+              <span className="shrink-0 text-sm text-popcorn">
+                {r.my_status === 'member' ? '进入 →' : r.my_status === 'left' ? '回到房间 →' : '🔒 查看'}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </Section>
   );
 }
